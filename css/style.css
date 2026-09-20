@@ -321,6 +321,295 @@ body {
 }
 .toast.show { opacity: 1; }
 
+/* ═══════════════════════════════════════════════════════════
+   차트 (dataviz 스킬 적용)
+
+   --series-1..8 은 dataviz reference/palette.md 의 categorical 8슬롯이다.
+   이 앱의 실제 차트 서피스(light #ffffff = --surface, dark #181b21 = --surface)로
+   validate_palette.js 를 재실행해 6개 체크를 확인했다:
+     light → 명도밴드/채도/CVD(worst adj ΔE 9.1)/일반시야(19.6) PASS,
+             contrast 3슬롯 <3:1 → WARN(relief rule: 범례 + "표로 보기"를 필수 제공)
+     dark  → 6개 전부 PASS
+   dark 값은 light 를 자동 반전한 게 아니라 다크 서피스용으로 따로 고른 스텝이다.
+   --proj-1..3 은 투영 시나리오(보수/목표/낙관) 전용 — all-pairs 게이트까지
+   통과하는 앞 3슬롯을 쓴다.
+   ═══════════════════════════════════════════════════════════ */
+:root {
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #4a3aa7;
+  --series-8: #e34948;
+  --proj-1: #2a78d6;
+  --proj-2: #eb6834;
+  --proj-3: #1baf7a;
+  --viz-muted: #898781;
+  --viz-grid: #e1e0d9;
+  --viz-baseline: #c3c2b7;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+    --proj-1: #3987e5;
+    --proj-2: #d95926;
+    --proj-3: #199e70;
+    --viz-muted: #898781;
+    --viz-grid: #2c2c2a;
+    --viz-baseline: #383835;
+  }
+}
+
+:root[data-theme="dark"] {
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+  --proj-1: #3987e5;
+  --proj-2: #d95926;
+  --proj-3: #199e70;
+  --viz-muted: #898781;
+  --viz-grid: #2c2c2a;
+  --viz-baseline: #383835;
+}
+
+/* ── 탭 ─────────────────────────────────────────── */
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 12px 16px 0;
+  max-width: 720px;
+  margin: 0 auto;
+}
+.tab {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  border-radius: 12px;
+  padding: 10px 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tab[aria-selected="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.chips[hidden] { display: none; }
+
+/* ── 차트 카드 ──────────────────────────────────── */
+.viz-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 14px 14px 16px;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow);
+}
+.viz-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.viz-card-head h2 { font-size: 15px; font-weight: 700; margin: 0; }
+.viz-card-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+.viz-note { font-size: 11.5px; color: var(--text-muted); margin: 6px 0 0; line-height: 1.5; }
+
+/* ── 필터 한 줄 ─────────────────────────────────── */
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 2px 2px 12px;
+}
+.filter-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.filter-label { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+
+.seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.seg-btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  border-radius: 9px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 30px;
+}
+.seg-btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.seg-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.viz-select {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 9px;
+  padding: 7px 9px;
+  font-size: 13px;
+  min-height: 32px;
+  max-width: 100%;
+}
+
+/* ── 대상 선택 ──────────────────────────────────── */
+.pick-group { margin-bottom: 10px; }
+.pick-group-title { font-size: 11px; color: var(--text-muted); font-weight: 600; margin-bottom: 5px; }
+.pick-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pick-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 16px;
+  padding: 6px 11px 6px 8px;
+  font-size: 12.5px;
+  cursor: pointer;
+  min-height: 32px;              /* 터치 타깃 */
+}
+.pick-chip input { margin: 0; width: 14px; height: 14px; accent-color: var(--accent); }
+.pick-chip.is-unavailable { opacity: 0.45; cursor: not-allowed; }
+.pick-swatch {
+  width: 10px; height: 10px; border-radius: 3px;
+  background: var(--viz-muted);
+  flex: 0 0 auto;
+}
+.pick-name { overflow-wrap: anywhere; }
+
+/* ── 플롯 ───────────────────────────────────────── */
+.viz-plot { position: relative; margin-top: 8px; }
+.viz-plot.is-refetching { opacity: 0.45; }   /* 스켈레톤 플래시 대신 이전 렌더 유지 */
+.viz-svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
+.viz-svg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.viz-line { stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.viz-series.is-muted .viz-line { opacity: 0.7; }
+.viz-end-dot { stroke: var(--surface); stroke-width: 2; }   /* 2px 서피스 링 */
+.viz-end-label { font-size: 10.5px; fill: var(--text-muted); font-variant-numeric: tabular-nums; }
+.viz-axis-label { font-size: 10.5px; fill: var(--viz-muted); font-variant-numeric: tabular-nums; }
+.viz-grid { stroke: var(--viz-grid); stroke-width: 1; }      /* 실선 hairline — 점선 금지 */
+.viz-baseline { stroke: var(--viz-baseline); stroke-width: 1; }
+.viz-crosshair { stroke: var(--viz-baseline); stroke-width: 1; }
+.viz-hover-dot { stroke: var(--surface); stroke-width: 2; }
+.viz-overlay { cursor: crosshair; }
+
+.viz-empty {
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 12.5px;
+  padding: 44px 8px;
+}
+
+/* ── 툴팁 ───────────────────────────────────────── */
+.viz-tip {
+  position: absolute;
+  top: 4px;
+  z-index: 5;
+  pointer-events: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: var(--shadow);
+  padding: 7px 9px;
+  font-size: 11.5px;
+  min-width: 120px;
+  max-width: 200px;
+}
+.viz-tip[hidden] { display: none; }
+.viz-tip-date { color: var(--text-muted); font-size: 10.5px; margin-bottom: 4px; }
+.viz-tip-row { display: flex; align-items: center; gap: 6px; line-height: 1.6; }
+.viz-tip-row b { font-variant-numeric: tabular-nums; }       /* 값이 앞 — 읽는 사람은 숫자를 원한다 */
+.viz-tip-name { color: var(--text-muted); overflow-wrap: anywhere; }
+.viz-tip-key { width: 12px; height: 2px; border-radius: 1px; flex: 0 0 auto; }
+
+/* ── 범례 ───────────────────────────────────────── */
+.viz-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; }
+.viz-legend[hidden] { display: none; }
+.viz-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
+.viz-legend-key { width: 14px; height: 3px; border-radius: 2px; flex: 0 0 auto; }
+.viz-legend-key.is-dash {
+  height: 0;
+  border-top: 3px dashed currentColor;
+  background: none !important;
+  border-top-color: var(--viz-muted);
+}
+
+/* ── 표 보기 (색 대비 WARN 에 대한 relief) ───────── */
+.viz-table-scroll { overflow-x: auto; margin-top: 10px; -webkit-overflow-scrolling: touch; }
+.viz-table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+.viz-table th, .viz-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 5px 8px;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.viz-table thead th { color: var(--text-muted); font-weight: 600; text-align: right; }
+.viz-table th[scope="row"], .viz-table thead th:first-child { text-align: left; }
+
+/* ── 배분 도넛 ──────────────────────────────────── */
+.alloc-body { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+.viz-donut { display: block; flex: 0 0 auto; }
+.alloc-body .viz-legend { flex: 1 1 140px; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 0; }
+.viz-donut-center-label { font-size: 10px; fill: var(--text-muted); }
+.viz-donut-center-value { font-size: 13px; font-weight: 700; fill: var(--text); }
+
+/* ── 투영 ───────────────────────────────────────── */
+.proj-controls { display: flex; flex-wrap: wrap; gap: 10px 14px; margin: 8px 0 10px; }
+.scenario-inputs { display: flex; flex-wrap: wrap; gap: 8px; }
+.scenario-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 5px 9px 5px 8px;
+}
+.scenario-key { width: 12px; height: 3px; border-radius: 2px; flex: 0 0 auto; }
+.scenario-name { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.scenario-field input {
+  width: 58px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-size: 16px;               /* iOS 자동 확대 방지 */
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 0;
+  min-width: 0;
+}
+.scenario-field input:focus { outline: none; }
+.scenario-unit { font-size: 12px; color: var(--text-muted); }
+
+.proj-result { margin-top: 8px; }
+.proj-result-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.proj-result-row:last-child { border-bottom: 0; }
+.proj-result-name { color: var(--text-muted); font-weight: 600; min-width: 34px; }
+.proj-result-row b { margin-left: auto; font-variant-numeric: tabular-nums; }
+.proj-result-diff { color: var(--text-faint); font-variant-numeric: tabular-nums; min-width: 62px; text-align: right; }
+
 @media (min-width: 560px) {
   .hero { border-radius: 0 0 24px 24px; padding-left: 24px; padding-right: 24px; }
   .hero-total { font-size: 32px; }

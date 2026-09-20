@@ -19,11 +19,105 @@
   <div class="hero-meta" id="updatedAt"></div>
 </header>
 
+<nav class="tabs" id="tabBar" role="tablist" aria-label="화면 전환">
+  <button type="button" class="tab" id="tabHoldings" role="tab" data-view="holdings" aria-selected="true" aria-controls="viewHoldings">보유 현황</button>
+  <button type="button" class="tab" id="tabTrends" role="tab" data-view="trends" aria-selected="false" aria-controls="viewTrends">추이 분석</button>
+</nav>
+
 <nav class="chips" id="chipBar" aria-label="카테고리 필터"></nav>
 
 <main class="container">
   <div id="statusBox" class="status" hidden></div>
-  <div id="list" aria-live="polite"></div>
+
+  <section id="viewHoldings" role="tabpanel" aria-labelledby="tabHoldings">
+    <div id="list" aria-live="polite"></div>
+  </section>
+
+  <section id="viewTrends" role="tabpanel" aria-labelledby="tabTrends" hidden>
+
+    <!-- 배분 요약. 시간 필터의 영향을 받지 않으므로 필터 행 "위"에 둔다
+         (필터는 자기가 스코프하는 것들 위에만 놓인다). -->
+    <section class="viz-card">
+      <div class="viz-card-head">
+        <h2>배분 요약 — 목표 vs 현재</h2>
+        <button type="button" class="link-btn" id="allocTableBtn" aria-expanded="false">표로 보기</button>
+      </div>
+      <p class="viz-note">바깥 진한 링 = 현재 비중, 안쪽 옅은 링 = 목표 비중.</p>
+      <div class="alloc-body">
+        <div id="allocDonut"></div>
+        <div id="allocLegend" class="viz-legend"></div>
+      </div>
+      <div id="allocTableWrap" hidden><div id="allocTable" class="viz-table-scroll"></div></div>
+    </section>
+
+    <!-- 필터 한 줄 — 아래의 모든 차트를 같은 구간으로 스코프한다. -->
+    <div class="filter-row">
+      <div class="filter-field">
+        <span class="filter-label" id="lblRange">기간</span>
+        <div class="seg" id="rangeSeg" aria-labelledby="lblRange"></div>
+      </div>
+      <div class="filter-field">
+        <span class="filter-label" id="lblUnit">집계 단위</span>
+        <div class="seg" id="unitSeg" aria-labelledby="lblUnit"></div>
+      </div>
+      <div class="filter-field">
+        <span class="filter-label" id="lblMode">표시 방식</span>
+        <div class="seg" id="modeSeg" aria-labelledby="lblMode"></div>
+      </div>
+      <div class="filter-field">
+        <label class="filter-label" for="benchmarkSelect">벤치마크</label>
+        <select id="benchmarkSelect" class="viz-select">
+          <option value="">사용 안 함</option>
+          <option value="SPX500">SPX500</option>
+        </select>
+      </div>
+    </div>
+
+    <section class="viz-card">
+      <div class="viz-card-head">
+        <h2>자산 추이</h2>
+        <span class="viz-card-actions">
+          <button type="button" class="link-btn" id="trendReloadBtn">새로고침</button>
+          <button type="button" class="link-btn" id="trendTableBtn" aria-expanded="false">표로 보기</button>
+        </span>
+      </div>
+      <div id="targetPicker"></div>
+      <div id="trendChart" class="viz-plot"></div>
+      <div id="trendLegend" class="viz-legend" hidden></div>
+      <p id="trendNote" class="viz-note" hidden></p>
+      <div id="trendTableWrap" hidden><div id="trendTable" class="viz-table-scroll"></div></div>
+    </section>
+
+    <section class="viz-card">
+      <div class="viz-card-head">
+        <h2>예상 수익률 투영 (what-if)</h2>
+      </div>
+      <div class="proj-controls">
+        <label class="filter-field">
+          <span class="filter-label">기준 대상</span>
+          <select id="projBase" class="viz-select"></select>
+        </label>
+        <label class="filter-field">
+          <span class="filter-label">투영 기간</span>
+          <select id="projMonths" class="viz-select">
+            <option value="12">12개월</option>
+            <option value="36">36개월</option>
+            <option value="60">60개월</option>
+            <option value="120">120개월</option>
+          </select>
+        </label>
+        <div class="filter-field">
+          <span class="filter-label" id="lblRateUnit">수익률 단위</span>
+          <div class="seg" id="rateUnitSeg" aria-labelledby="lblRateUnit"></div>
+        </div>
+      </div>
+      <div id="scenarioInputs" class="scenario-inputs"></div>
+      <div id="projChart" class="viz-plot"></div>
+      <div id="projLegend" class="viz-legend" hidden></div>
+      <div id="projSummary"></div>
+    </section>
+
+  </section>
 </main>
 
 <footer class="page-foot">
@@ -59,6 +153,8 @@
 
 <script src="js/config.js"></script>
 <script src="js/api.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/views/trends.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

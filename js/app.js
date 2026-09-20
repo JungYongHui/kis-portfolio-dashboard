@@ -15,7 +15,8 @@
     portfolio: null,
     planByRow: {},     // row -> rebalancePlan 항목
     filter: 'all',
-    loading: false
+    loading: false,
+    view: 'holdings'   // 'holdings' | 'trends'
   };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -73,6 +74,29 @@
     box.hidden = false;
     box.textContent = msg;
     box.classList.toggle('error', !!isError);
+  }
+
+  /* ── 탭(화면 전환) ──────────────────────────────── */
+
+  function setView(view) {
+    state.view = view;
+    $('viewHoldings').hidden = view !== 'holdings';
+    $('viewTrends').hidden = view !== 'trends';
+    // 카테고리 칩 필터는 보유 현황 화면 전용이다.
+    $('chipBar').hidden = view !== 'holdings';
+
+    Array.prototype.forEach.call($('tabBar').querySelectorAll('.tab'), function (b) {
+      b.setAttribute('aria-selected', String(b.dataset.view === view));
+    });
+
+    // 추이 뷰는 열릴 때 처음으로 history 를 부른다(보유 현황만 볼 사람에게 왕복을 강요하지 않는다).
+    if (view === 'trends' && window.TrendsView) window.TrendsView.activate();
+  }
+
+  function wireTabs() {
+    Array.prototype.forEach.call($('tabBar').querySelectorAll('.tab'), function (b) {
+      b.addEventListener('click', function () { setView(b.dataset.view); });
+    });
   }
 
   /* ── 토큰 입력 ──────────────────────────────────── */
@@ -268,6 +292,8 @@
       renderHero(portfolio);
       renderChips(portfolio.categories || []);
       renderList();
+      // 추이 뷰는 같은 portfolio 응답을 재사용한다(배분 도넛 + 투영 기준값).
+      if (window.TrendsView) window.TrendsView.setPortfolio(portfolio);
     } catch (e) {
       if (e.code === 'unauthorized' || e.code === 'no_token') {
         API.clearToken();
@@ -296,8 +322,14 @@
 
   /* ── 시작 ───────────────────────────────────────── */
 
+  // 추이 뷰가 토스트를 쓸 수 있게 최소 인터페이스만 공개한다.
+  window.Dashboard = { toast: toast, setView: setView };
+
   wireTokenSheet();
+  wireTabs();
+  if (window.TrendsView) window.TrendsView.wire();
   $('reloadBtn').addEventListener('click', load);
+  setView('holdings');
 
   if (API.hasToken()) load();
   else openTokenSheet();
