@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>투자 포트폴리오</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-top">
+    <span class="hero-label">총 평가금액</span>
+    <button type="button" class="ghost-btn" id="reloadBtn" aria-label="다시 불러오기">↻</button>
+  </div>
+  <div class="hero-total" id="totalValue">–</div>
+  <div class="hero-sub" id="totalSub">불러오는 중…</div>
+  <div class="hero-meta" id="updatedAt"></div>
+</header>
+
+<nav class="chips" id="chipBar" aria-label="카테고리 필터"></nav>
+
+<main class="container">
+  <div id="statusBox" class="status" hidden></div>
+  <div id="list" aria-live="polite"></div>
+</main>
+
+<footer class="page-foot">
+  <button type="button" class="link-btn" id="resetTokenBtn">API 토큰 재설정</button>
+</footer>
+
+<!-- 최초 접속 시 토큰 입력 -->
+<div class="overlay" id="tokenOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="tokenTitle">
+    <h2 id="tokenTitle">API 토큰 입력</h2>
+    <p class="sheet-desc">
+      이 대시보드는 GAS API 토큰이 있어야 데이터를 조회할 수 있습니다.
+      토큰은 이 브라우저의 <code>localStorage</code>에만 저장되며 서버나 소스코드에 남지 않습니다.
+    </p>
+    <label class="field">
+      <span>API 토큰</span>
+      <input type="password" id="tokenInput" autocomplete="off" autocapitalize="off" spellcheck="false"
+             placeholder="예: 550e8400-e29b-…">
+    </label>
+    <p class="sheet-err" id="tokenError" hidden></p>
+    <div class="sheet-actions">
+      <button type="button" class="btn btn-secondary" id="bootstrapBtn">최초 발급받기</button>
+      <button type="button" class="btn btn-primary" id="tokenSaveBtn">저장하고 시작</button>
+    </div>
+    <p class="sheet-hint">
+      아직 토큰을 만든 적이 없다면 “최초 발급받기”를 누르세요. 이미 발급된 경우에는
+      <code>already_initialized</code> 가 반환되며, 기존 토큰을 그대로 입력해야 합니다.
+    </p>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="js/config.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

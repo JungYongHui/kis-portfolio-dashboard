@@ -1,0 +1,331 @@
+/* 투자 대시보드 — 모바일 우선 스타일 (빌드리스, 순수 CSS) */
+
+:root {
+  --bg: #f2f3f5;
+  --surface: #ffffff;
+  --surface-2: #f7f8fa;
+  --text: #1a1a1a;
+  --text-muted: #777d87;
+  --text-faint: #a0a5ad;
+  --border: #e5e7eb;
+  --hero-from: #1f2937;
+  --hero-to: #111827;
+  --hero-text: #ffffff;
+  --up: #e0393e;      /* 상승 — 국내 관행상 적색 */
+  --down: #3366cc;    /* 하락 — 청색 */
+  --up-soft: #fde8e8;
+  --down-soft: #e6edfb;
+  --accent: #111827;
+  --accent-text: #ffffff;
+  --bar-track: #e9eaee;
+  --bar-fill: #9ca3af;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --radius: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1115;
+    --surface: #181b21;
+    --surface-2: #20242c;
+    --text: #e9eaee;
+    --text-muted: #9aa1ad;
+    --text-faint: #6b7280;
+    --border: #2a2f38;
+    --hero-from: #1c2430;
+    --hero-to: #11151c;
+    --up: #ff6b70;
+    --down: #6f9dff;
+    --up-soft: #3a1f22;
+    --down-soft: #1d2740;
+    --accent: #e9eaee;
+    --accent-text: #11151c;
+    --bar-track: #2a2f38;
+    --bar-fill: #6b7280;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0f1115;
+  --surface: #181b21;
+  --surface-2: #20242c;
+  --text: #e9eaee;
+  --text-muted: #9aa1ad;
+  --text-faint: #6b7280;
+  --border: #2a2f38;
+  --hero-from: #1c2430;
+  --hero-to: #11151c;
+  --up: #ff6b70;
+  --down: #6f9dff;
+  --up-soft: #3a1f22;
+  --down-soft: #1d2740;
+  --accent: #e9eaee;
+  --accent-text: #11151c;
+  --bar-track: #2a2f38;
+  --bar-fill: #6b7280;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+  overflow-x: hidden;          /* 가로 스크롤 금지 */
+}
+
+/* ── 헤더 ───────────────────────────────────────── */
+.hero {
+  background: linear-gradient(135deg, var(--hero-from), var(--hero-to));
+  color: var(--hero-text);
+  padding: 20px 16px 22px;
+  padding-top: calc(20px + env(safe-area-inset-top));
+  border-radius: 0 0 20px 20px;
+}
+.hero-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hero-label { font-size: 13px; opacity: 0.7; }
+.hero-total { font-size: 28px; font-weight: 700; margin-top: 4px; letter-spacing: -0.02em; }
+.hero-sub { font-size: 13px; margin-top: 6px; opacity: 0.92; }
+.hero-meta { font-size: 12px; opacity: 0.5; margin-top: 4px; }
+.hero .up { color: #ff8a8a; }
+.hero .down { color: #8ab4ff; }
+
+.ghost-btn {
+  background: rgba(255, 255, 255, 0.15);
+  border: 0;
+  color: inherit;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 16px;
+  cursor: pointer;
+}
+.ghost-btn:disabled { opacity: 0.5; }
+
+/* ── 카테고리 칩 ─────────────────────────────────── */
+.chips {
+  display: flex;
+  flex-wrap: wrap;             /* 가로 스크롤 대신 줄바꿈 */
+  gap: 6px;
+  padding: 12px 16px 2px;
+}
+.chip {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  border-radius: 16px;
+  padding: 7px 13px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.chip[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+/* ── 본문 ───────────────────────────────────────── */
+.container { padding: 10px 16px 24px; max-width: 720px; margin: 0 auto; }
+
+.status {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+.status.error { color: var(--up); border-color: var(--up); }
+
+.cat-section { margin-bottom: 20px; }
+.cat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 0 4px;
+  margin-bottom: 8px;
+}
+.cat-name { font-size: 15px; font-weight: 700; }
+.cat-pct { font-size: 12px; color: var(--text-muted); }
+.cat-pct b { color: var(--text); }
+
+.card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow);
+}
+.card-top { display: flex; align-items: flex-start; gap: 12px; }
+.card-id { flex: 1; min-width: 0; }
+.card-name {
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;     /* 긴 종목명이 가로로 밀지 않게 */
+}
+.card-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.card-num { flex: 0 0 auto; text-align: right; }
+.card-value { font-size: 15px; font-weight: 600; }
+.card-pnl { font-size: 13px; font-weight: 600; margin-top: 2px; }
+.card-pnl.up { color: var(--up); }
+.card-pnl.down { color: var(--down); }
+
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.card-meta b { color: var(--text); font-weight: 600; }
+
+.bar-wrap { margin-top: 10px; }
+.bar-track {
+  position: relative;
+  height: 6px;
+  background: var(--bar-track);
+  border-radius: 3px;
+}
+.bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--bar-fill);
+  border-radius: 3px;
+}
+.bar-target {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 12px;
+  background: var(--text);
+  border-radius: 1px;
+}
+.bar-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 5px;
+}
+
+.badge {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.badge.buy { background: var(--up-soft); color: var(--up); }
+.badge.sell { background: var(--down-soft); color: var(--down); }
+.badge.none { background: var(--surface-2); color: var(--text-faint); }
+
+.empty { text-align: center; color: var(--text-faint); padding: 28px 0; font-size: 13px; }
+
+.page-foot { text-align: center; padding: 0 16px calc(24px + env(safe-area-inset-bottom)); }
+.link-btn {
+  background: none;
+  border: 0;
+  color: var(--text-faint);
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 6px;
+}
+
+/* ── 토큰 입력 시트 ──────────────────────────────── */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 50;
+}
+.overlay[hidden] { display: none; }
+.sheet {
+  background: var(--surface);
+  color: var(--text);
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  border-radius: 20px 20px 0 0;
+  padding: 20px 16px calc(18px + env(safe-area-inset-bottom));
+}
+.sheet h2 { margin: 0 0 6px; font-size: 17px; }
+.sheet-desc, .sheet-hint { font-size: 12.5px; color: var(--text-muted); margin: 0 0 14px; }
+.sheet-hint { margin: 12px 0 0; }
+.sheet code {
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+.sheet-err { font-size: 12.5px; color: var(--up); margin: 0 0 12px; }
+.field { display: block; margin-bottom: 12px; }
+.field > span { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+.field input {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 16px;             /* iOS 자동 확대 방지 */
+}
+.sheet-actions { display: flex; gap: 8px; }
+.btn {
+  flex: 1;
+  border: 0;
+  border-radius: 12px;
+  padding: 13px 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+.btn-primary { background: var(--accent); color: var(--accent-text); }
+.btn:disabled { opacity: 0.55; }
+
+/* ── 토스트 ─────────────────────────────────────── */
+.toast {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  background: #111827;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+.toast.show { opacity: 1; }
+
+@media (min-width: 560px) {
+  .hero { border-radius: 0 0 24px 24px; padding-left: 24px; padding-right: 24px; }
+  .hero-total { font-size: 32px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
