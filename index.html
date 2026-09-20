@@ -67,8 +67,10 @@
       <div class="filter-field">
         <label class="filter-label" for="benchmarkSelect">벤치마크</label>
         <select id="benchmarkSelect" class="viz-select">
+          <!-- 실제 목록은 GET `benchmarks` 로 채운다(trends.js). 여기 값은 호출 실패 시 폴백이며
+               계약상 허용 심볼이어야 한다 — 임의 문자열은 빈 배열이 돌아와 조용히 실패한다. -->
           <option value="">사용 안 함</option>
-          <option value="SPX500">SPX500</option>
+          <option value="SP500">S&amp;P500 (원화)</option>
         </select>
       </div>
     </div>

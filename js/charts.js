@@ -52,6 +52,16 @@
   }
 
   /**
+   * 숫자 변환. `Number(null) === 0`, `Number('') === 0` 이라 빈 값이 "0원"으로
+   * 둔갑하는 걸 막는다 — 값 없음은 반드시 NaN 으로 떨어져야 한다.
+   * (종목별 이력이 붙으면서 시리즈에 결측 구간이 생겨 실제로 드러난 경로다.)
+   */
+  function num(v) {
+    if (v === null || v === undefined || v === '') return NaN;
+    return Number(v);
+  }
+
+  /**
    * history 원본 정규화.
    * staging 응답에서 (a) 날짜 내림차순, (b) 같은 날짜 중복 행이 실제로 관측됐다.
    * → 날짜 오름차순 정렬 + 날짜별 1행(입력 순서상 먼저 나온 행 = 최신 기록분)으로 접는다.
@@ -70,6 +80,52 @@
       seen[d] = copy;
     });
     return Object.keys(seen).sort().map(function (d) { return seen[d]; });
+  }
+
+  /* ── 종목별 이력 병합 ─────────────────────────────────────
+   * itemHistory(GET `itemHistory`)는 [{date,row,code,value,estimated}] 오름차순이고,
+   * history(카테고리, 내림차순)와 날짜 범위가 다를 수 있다(관측상 최신 1~3일이 비어 있다).
+   *
+   * 설계 결정: 별도 소스로 두지 않고 history 행에 **새 키만 추가**해 병합한다.
+   * 그러면 sliceRange/aggregate/rebase/차트 렌더가 카테고리와 완전히 같은 경로를 탄다.
+   *  - 키는 종목명이 아니라 row 번호로 네임스페이스(`item#8`)한다.
+   *    종목명이 카테고리명(`미국` 등)과 겹치거나 같은 이름이 두 카테고리에 있어도 안전하다.
+   *  - estimated 는 종목마다 다를 수 있으므로(실제로 2026-08-26 이 카테고리 실측 /
+   *    종목 추정으로 갈렸다) 행 공용 `estimated` 를 덮지 않고 `est#<row>` 로 따로 둔다.
+   *  - history 에 없는 날짜는 **버린다**. 새 날짜 행을 만들면 그 행에 카테고리 값이
+   *    없어서 기존 카테고리 시리즈에 구멍이 생긴다(회귀). 버린 날짜는 호출부가 알리게
+   *    skippedDates 로 돌려준다.
+   */
+  var ITEM_PREFIX = 'item#';
+  var EST_PREFIX = 'est#';
+
+  function itemField(row) { return ITEM_PREFIX + row; }
+  function itemEstField(row) { return EST_PREFIX + row; }
+
+  function mergeItemHistory(historyRows, itemRows) {
+    var byDate = {};
+    (historyRows || []).forEach(function (r) { if (r && r.date) byDate[r.date] = r; });
+
+    var skipped = {}, seenRows = {}, latest = '';
+    (itemRows || []).forEach(function (r) {
+      if (!r || r.row === null || r.row === undefined || r.row === '') return;
+      var d = dayStr(r.date);
+      if (!d) return;
+      var host = byDate[d];
+      if (!host) { skipped[d] = 1; return; }
+      var v = num(r.value);
+      if (!isFinite(v)) return;
+      host[itemField(r.row)] = v;
+      host[itemEstField(r.row)] = !!r.estimated;
+      seenRows[r.row] = 1;
+      if (d > latest) latest = d;
+    });
+
+    return {
+      rows: Object.keys(seenRows),
+      skippedDates: Object.keys(skipped).sort(),
+      latestDate: latest
+    };
   }
 
   function periodKey(date, unit) {
@@ -102,7 +158,16 @@
         at[k] = out.length;
         out.push(merged);
       } else {
-        merged.estimated = !!(out[at[k]].estimated || r.estimated);
+        var prev = out[at[k]];
+        merged.estimated = !!(prev.estimated || r.estimated);
+        Object.keys(prev).forEach(function (f) {
+          // est#<row> 도 공용 estimated 와 같은 규칙(구간에 하나라도 추정이면 추정).
+          if (f.indexOf(EST_PREFIX) === 0) { if (prev[f]) merged[f] = true; return; }
+          // 구간 마지막 행에 없는 키는 그 구간에서 마지막으로 관측된 값을 이어받는다.
+          // 종목별 이력이 카테고리보다 하루이틀 짧아도 주/월 집계에서 통째로 사라지지 않는다.
+          // 카테고리/total 은 모든 행에 항상 존재하므로 이 경로를 타지 않는다(기존 동작 불변).
+          if (!Object.prototype.hasOwnProperty.call(merged, f)) merged[f] = prev[f];
+        });
         out[at[k]] = merged;                     // 뒤에 온 행 = 구간 마지막
       }
     });
@@ -130,14 +195,14 @@
     if (!series || !series.length) return [];
     var base = null;
     for (var i = 0; i < series.length; i++) {
-      var v = Number(series[i].value);
+      var v = num(series[i].value);
       if (isFinite(v) && v > 0) { base = v; break; }
     }
     if (base === null) return series.map(function (p) {
       return { date: p.date, value: null, estimated: p.estimated };
     });
     return series.map(function (p) {
-      var v = Number(p.value);
+      var v = num(p.value);
       return {
         date: p.date,
         value: isFinite(v) ? (v / base) * 100 : null,
@@ -277,7 +342,7 @@
     var vmin = Infinity, vmax = -Infinity;
     series.forEach(function (s) {
       s.points.forEach(function (p) {
-        var v = Number(p.value);
+        var v = num(p.value);            // null 을 0 으로 읽으면 축이 0까지 끌려 내려간다
         if (!isFinite(v)) return;
         if (v < vmin) vmin = v;
         if (v > vmax) vmax = v;
@@ -602,6 +667,9 @@
     SlotRegistry: SlotRegistry,
     MAX_SLOTS: MAX_SLOTS,
     normalizeHistory: normalizeHistory,
+    mergeItemHistory: mergeItemHistory,
+    itemField: itemField,
+    itemEstField: itemEstField,
     aggregate: aggregate,
     sliceRange: sliceRange,
     rebase: rebase,

@@ -23,9 +23,14 @@
 
   var state = {
     portfolio: null,
-    history: [],            // 정규화된 raw daily
+    history: [],            // 정규화된 raw daily(+ 종목별 이력이 item#<row> 키로 병합된 상태)
     historyError: null,
     historyLoaded: false,
+    itemRows: [],           // itemHistory 원본 [{date,row,code,value,estimated}]
+    itemError: null,        // itemHistory 전용 — history 와 독립적으로 실패할 수 있다
+    itemLoaded: false,
+    itemLatestDate: '',     // 종목별 이력이 커버하는 마지막 날짜(카테고리보다 짧을 수 있다)
+    itemSkippedDates: [],
     loading: false,
 
     selected: {},           // entityKey -> true
@@ -72,9 +77,12 @@
     cats.forEach(function (cat) {
       (cat.items || []).forEach(function (it) {
         if (!it.name) return;
+        // field 는 종목명이 아니라 row 네임스페이스 키 — 종목명이 카테고리명과 겹치거나
+        // 같은 이름이 두 카테고리에 있어도 서로를 덮지 않는다(charts.mergeItemHistory 참조).
         out.push({
           key: 'item:' + cat.name + ':' + it.row,
-          name: it.name, field: it.name, kind: 'item',
+          name: it.name, field: C.itemField(it.row), estField: C.itemEstField(it.row),
+          kind: 'item', row: it.row,
           value: Number(it.value) || 0, category: cat.name
         });
       });
@@ -86,6 +94,26 @@
   function fieldAvailable(field) {
     return state.history.some(function (r) {
       return Object.prototype.hasOwnProperty.call(r, field) && isFinite(Number(r[field]));
+    });
+  }
+
+  /**
+   * 이 행에서 이 엔티티가 추정치인가.
+   * 종목은 자기 플래그(est#<row>)를 쓴다 — 같은 날짜라도 카테고리는 실측인데 종목만
+   * 백필 추정인 경우가 실제로 있다(staging 2026-08-26). 플래그가 없으면 행 공용값.
+   */
+  function estimatedOf(row, ent) {
+    if (ent && ent.estField && Object.prototype.hasOwnProperty.call(row, ent.estField)) {
+      return !!row[ent.estField];
+    }
+    return !!row.estimated;
+  }
+
+  /** 엔티티 하나의 시계열 포인트. */
+  function pointsOf(rows, ent) {
+    return rows.map(function (r) {
+      var v = Number(r[ent.field]);
+      return { date: r.date, value: isFinite(v) ? v : null, estimated: estimatedOf(r, ent) };
     });
   }
 
@@ -110,10 +138,7 @@
     entities().forEach(function (ent) {
       if (!state.selected[ent.key]) return;
       if (!fieldAvailable(ent.field)) return;
-      var pts = rows.map(function (r) {
-        var v = Number(r[ent.field]);
-        return { date: r.date, value: isFinite(v) ? v : null, estimated: !!r.estimated };
-      });
+      var pts = pointsOf(rows, ent);
       if (state.mode === 'pct') pts = C.rebase(pts);
       var slot = slots.assign(ent.key);
       list.push({
@@ -151,10 +176,7 @@
     var rows = baseRows();
     var actual = [];
     if (fieldAvailable(ent.field)) {
-      actual = rows.map(function (r) {
-        var v = Number(r[ent.field]);
-        return { date: r.date, value: isFinite(v) ? v : null, estimated: !!r.estimated };
-      }).filter(function (p) { return p.value !== null; });
+      actual = pointsOf(rows, ent).filter(function (p) { return p.value !== null; });
     }
 
     var startDate = actual.length ? actual[actual.length - 1].date
@@ -236,8 +258,13 @@
         lab.className = 'pick-chip' + (available ? '' : ' is-unavailable');
         lab.htmlFor = id;
         if (!available) {
-          lab.title = 'history 응답에 이 대상의 일별 컬럼이 없어 추이를 그릴 수 없습니다. ' +
-            '투영 차트의 기준값으로는 사용할 수 있습니다.';
+          lab.title = ent.kind === 'item'
+            ? (state.itemLoaded
+              ? '이 종목은 종목별 이력(itemHistory)에 일별 데이터가 없습니다' +
+                '(현금처럼 종목코드가 없는 항목 등). 투영 차트의 기준값으로는 사용할 수 있습니다.'
+              : '종목별 이력을 불러오는 중입니다.')
+            : 'history 응답에 이 대상의 일별 컬럼이 없어 추이를 그릴 수 없습니다. ' +
+              '투영 차트의 기준값으로는 사용할 수 있습니다.';
         }
 
         var cb = document.createElement('input');
@@ -276,12 +303,31 @@
       });
       wrap.appendChild(box);
 
-      if (grp.label === '개별 종목' && grp.list.length && !grp.list.some(function (e) { return fieldAvailable(e.field); })) {
-        var note = document.createElement('p');
-        note.className = 'viz-note';
-        note.textContent = '개별 종목은 현재 history 응답에 일별 컬럼이 없어 추이 선을 그릴 수 없습니다' +
-          '(계약상 history shape: date/total/카테고리 4종). 아래 투영 차트의 기준값으로는 선택할 수 있습니다.';
-        wrap.appendChild(note);
+      if (grp.label === '개별 종목' && grp.list.length) {
+        var avail = grp.list.filter(function (e) { return fieldAvailable(e.field); }).length;
+        var text = '';
+        if (state.itemError) {
+          text = '종목별 이력을 불러오지 못했습니다: ' + state.itemError +
+            ' — 전체/카테고리 추이는 그대로 표시됩니다. 종목은 아래 투영 차트의 기준값으로만 선택할 수 있습니다.';
+        } else if (!state.itemLoaded) {
+          text = '종목별 일별 이력을 불러오는 중…';
+        } else if (!avail) {
+          text = '종목별 일별 이력이 아직 없습니다(백필/일간 스냅샷 이후 표시됩니다). ' +
+            '아래 투영 차트의 기준값으로는 선택할 수 있습니다.';
+        } else if (avail < grp.list.length) {
+          text = grp.list.length + '개 중 ' + avail + '개 종목에 일별 이력이 있습니다. ' +
+            '나머지(종목코드가 없는 현금성 항목 등)는 투영 기준값으로만 선택할 수 있습니다.';
+        }
+        if (state.itemLatestDate && state.history.length &&
+            state.itemLatestDate < state.history[state.history.length - 1].date) {
+          text += (text ? ' ' : '') + '종목별 이력은 ' + state.itemLatestDate + '까지 반영돼 있습니다.';
+        }
+        if (text) {
+          var note = document.createElement('p');
+          note.className = 'viz-note';
+          note.textContent = text;
+          wrap.appendChild(note);
+        }
       }
       host.appendChild(wrap);
     });
@@ -437,8 +483,14 @@
       msgs.push('데이터 최신일 ' + state.history[state.history.length - 1].date +
         ' 기준 · 기간은 이 날짜에서 거슬러 계산합니다.');
     }
-    if (state.history.some(function (r) { return r.estimated; })) {
-      msgs.push('점선·옅은 구간은 백필 추정치(estimated)입니다.');
+    var hasEstimated = state.history.some(function (r) {
+      if (r.estimated) return true;
+      return Object.keys(r).some(function (k) { return k.indexOf('est#') === 0 && r[k]; });
+    });
+    if (hasEstimated) msgs.push('점선·옅은 구간은 백필 추정치(estimated)입니다.');
+    if (state.itemSkippedDates.length) {
+      msgs.push('종목별 이력 중 ' + state.itemSkippedDates.length +
+        '일치는 전체 이력에 없는 날짜라 제외했습니다.');
     }
     note.textContent = msgs.join(' ');
     note.hidden = !msgs.length;
@@ -569,6 +621,38 @@
 
   /* ── 데이터 로딩 ─────────────────────────────────────────── */
 
+  /**
+   * 벤치마크 드롭다운을 GET `benchmarks` 로 채운다.
+   * 정적 폴백 옵션은 계약상 허용 심볼(SP500)이어야 한다 — 임의 문자열을 보내면
+   * benchmarkHistory 가 에러가 아니라 **빈 배열**을 돌려줘서 조용히 실패한다.
+   */
+  async function loadBenchmarkList() {
+    try {
+      var list = await global.API.apiGet('benchmarks');
+      if (!Array.isArray(list) || !list.length) return;
+      var sel = $('benchmarkSelect');
+      var prev = sel.value;
+      sel.innerHTML = '';
+      var none = document.createElement('option');
+      none.value = '';
+      none.textContent = '사용 안 함';
+      sel.appendChild(none);
+      list.forEach(function (b) {
+        if (!b || !b.symbol) return;
+        var o = document.createElement('option');
+        o.value = b.symbol;
+        // desc 를 그대로 노출한다 — "지수"가 아니라 원화 ETF 프록시임을 숨기지 않는다.
+        o.textContent = b.desc || b.name || b.symbol;
+        o.title = (b.name || '') + (b.code ? ' (' + b.code + ')' : '');
+        sel.appendChild(o);
+      });
+      sel.value = prev;
+      if (sel.value !== prev) { sel.value = ''; state.benchmark = ''; }
+    } catch (e) {
+      /* 정적 폴백 옵션을 그대로 둔다 — 화면은 깨지지 않는다. */
+    }
+  }
+
   async function loadBenchmark() {
     state.benchmarkRows = null;
     state.benchmarkNote = '';
@@ -596,13 +680,40 @@
     state.loading = true;
     $('trendChart').classList.add('is-refetching');   // 스켈레톤 대신 이전 렌더를 흐리게 유지
     try {
-      var rows = await global.API.apiGet('history');
-      state.history = C.normalizeHistory(rows);
-      state.historyError = null;
+      // 두 요청은 서로 독립이다 — itemHistory 가 죽어도 카테고리 추이는 그대로 뜨고,
+      // 반대도 마찬가지다. 그래서 각각 따로 잡는다(allSettled 대신 개별 catch).
+      var histP = global.API.apiGet('history').then(function (r) {
+        state.history = C.normalizeHistory(r);
+        state.historyError = null;
+      }, function (e) {
+        state.history = [];
+        state.historyError = e.message || String(e);
+      });
+      var itemP = global.API.apiGet('itemHistory').then(function (r) {
+        state.itemRows = Array.isArray(r) ? r : [];
+        state.itemError = null;
+      }, function (e) {
+        state.itemRows = [];
+        state.itemError = e.message || String(e);
+      });
+      await histP;
+      await itemP;
+
+      state.itemLatestDate = '';
+      state.itemSkippedDates = [];
+      if (!state.itemError && state.history.length) {
+        // 병합은 항상 방금 normalize 한 새 행 배열에 대해서만 한다(중복 병합 불가).
+        var m = C.mergeItemHistory(state.history, state.itemRows);
+        state.itemLatestDate = m.latestDate;
+        state.itemSkippedDates = m.skippedDates;
+      }
       state.historyLoaded = true;
+      state.itemLoaded = true;
     } catch (e) {
-      state.historyError = e.message || String(e);
+      // 위에서 개별 처리하므로 여기에 오는 건 예상 밖의 예외뿐 — 화면은 살려 둔다.
+      state.historyError = state.historyError || e.message || String(e);
       state.historyLoaded = true;
+      state.itemLoaded = true;
     } finally {
       state.loading = false;
       $('trendChart').classList.remove('is-refetching');
@@ -628,8 +739,10 @@
   }
 
   /** 탭이 열릴 때: 숨겨져 있는 동안은 clientWidth 가 0이라 최소 폭으로 그려져 있다. 반드시 다시 그린다. */
+  var benchmarkListLoaded = false;
   function activate() {
     loadHistory(false);
+    if (!benchmarkListLoaded) { benchmarkListLoaded = true; loadBenchmarkList(); }
     forceRedraw();
   }
 
