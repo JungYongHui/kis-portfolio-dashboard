@@ -291,6 +291,12 @@
       { label: '전체 / 카테고리', list: ents.filter(function (e) { return e.kind !== 'item'; }) },
       { label: '개별 종목', list: ents.filter(function (e) { return e.kind === 'item'; }) }
     ];
+    // 체크박스 id 고유 시퀀스. ent.key(예: 'cat:안전자산')를 /[^\w]/g로 정규화하면
+    // \w가 한글을 매치하지 못해 한글 부분이 전부 '_'로 뭉개진다 — "안전자산"/"배당자산"/
+    // "투자자산"처럼 글자 수가 같은 카테고리 이름은 전부 동일한 id로 충돌했고, 그 결과
+    // label[for=id]가 문서상 첫 번째로 렌더링된 요소(안전자산)로만 매핑돼 버렸다
+    // ("뭘 클릭해도 안전자산만 눌린다" 버그의 원인). 숫자 시퀀스는 언어와 무관하게 항상 고유하다.
+    var chipSeq = 0;
 
     groups.forEach(function (grp) {
       if (!grp.list.length) return;
@@ -305,7 +311,7 @@
       box.className = 'pick-chips';
       grp.list.forEach(function (ent) {
         var available = fieldAvailable(ent.field);
-        var id = 'pick_' + ent.key.replace(/[^\w]/g, '_');
+        var id = 'pick_' + (chipSeq++);
         var lab = document.createElement('label');
         lab.className = 'pick-chip' + (available ? '' : ' is-unavailable');
         lab.htmlFor = id;
