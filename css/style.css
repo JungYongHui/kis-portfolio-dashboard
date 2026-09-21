@@ -504,6 +504,14 @@ body {
 .viz-grid { stroke: var(--viz-grid); stroke-width: 1; }      /* 실선 hairline — 점선 금지 */
 .viz-baseline { stroke: var(--viz-baseline); stroke-width: 1; }
 .viz-crosshair { stroke: var(--viz-baseline); stroke-width: 1; }
+/* 투자원금 기준선 — 주석이지 데이터가 아니다. 시리즈와 같은 색이되 더 가늘고 옅게,
+   추정(4 3)/투영(5 4)과 겹치지 않는 점 패턴으로 형태까지 구분한다. */
+.viz-refline { stroke-width: 1.25; stroke-dasharray: 1.5 4; stroke-linecap: round; opacity: 0.55; }
+/* 라벨이 추이선 위에 겹쳐도 읽히도록 서피스 색 후광을 두른다(글자는 텍스트 토큰 — 시리즈 색을 입히지 않는다). */
+.viz-refline-label {
+  font-size: 10px; fill: var(--text-muted);
+  paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round;
+}
 .viz-hover-dot { stroke: var(--surface); stroke-width: 2; }
 .viz-overlay { cursor: crosshair; }
 
@@ -547,6 +555,20 @@ body {
   background: none !important;
   border-top-color: var(--viz-muted);
 }
+
+/* ── 투자원금 대비 손익 요약 ──────────────────────
+   차트의 "현재 추이선 ↔ 원금 기준선" 격차를 숫자로 한 번 더 준다(색 없이도 읽힌다). */
+.viz-pnl { display: flex; flex-direction: column; gap: 3px; margin-top: 9px; }
+.viz-pnl[hidden] { display: none; }
+.viz-pnl-row {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;
+  font-size: 12px; color: var(--text-muted);
+}
+.viz-pnl-key { width: 14px; height: 0; border-top: 2px dotted currentColor; flex: 0 0 auto; align-self: center; }
+.viz-pnl-name { color: var(--text); font-weight: 600; }
+.viz-pnl-val { font-variant-numeric: tabular-nums; font-weight: 600; }
+.viz-pnl-val.up { color: var(--up); }
+.viz-pnl-val.down { color: var(--down); }
 
 /* ── 표 보기 (색 대비 WARN 에 대한 relief) ───────── */
 .viz-table-scroll { overflow-x: auto; margin-top: 10px; -webkit-overflow-scrolling: touch; }

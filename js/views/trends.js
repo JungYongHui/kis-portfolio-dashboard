@@ -19,6 +19,14 @@
   var C = global.Charts;
 
   var TOTAL_KEY = '__total__';
+  /** 빈 값이 "0원"으로 둔갑하지 않게 — 값 없음은 NaN 으로 떨어뜨린다(charts.num 과 같은 규칙). */
+  function num(v) {
+    if (v === null || v === undefined || v === '') return NaN;
+    return Number(v);
+  }
+  // 기준선이 5개 이상이면 선보다 잡음이 많아진다 — 그 이상은 선을 접고 아래 숫자 요약만 남긴다.
+  var MAX_REF_LINES = 4;
+
   var CATEGORY_ORDER = ['안전자산', '배당자산', '투자자산', '미국'];
 
   var state = {
@@ -83,7 +91,9 @@
           key: 'item:' + cat.name + ':' + it.row,
           name: it.name, field: C.itemField(it.row), estField: C.itemEstField(it.row),
           kind: 'item', row: it.row,
-          value: Number(it.value) || 0, category: cat.name
+          value: Number(it.value) || 0,
+          invested: num(it.invested),          // 평단가×수량 — 매매가 있을 때만 바뀌는 상수
+          category: cat.name
         });
       });
     });
@@ -126,6 +136,27 @@
     return (cat.items || []).reduce(function (a, it) { return a + (Number(it.value) || 0); }, 0);
   }
 
+  /**
+   * 투자원금(평단가 × 수량 합계). 매수/매도 때만 바뀌므로 **일별 이력이 없다** —
+   * 시계열 선이 아니라 현재 시점 상수(가로 기준선)로만 쓴다.
+   * 값이 없으면(현금성 항목 등) NaN 을 돌려 기준선을 아예 그리지 않는다 — 0원 선을 그리면 거짓말이 된다.
+   */
+  function investedOf(ent) {
+    if (!state.portfolio) return NaN;
+    if (ent.kind === 'total') return num(state.portfolio.invested);
+    if (ent.kind === 'item') return num(ent.invested);
+    var cat = (state.portfolio.categories || []).filter(function (c) { return c.name === ent.name; })[0];
+    if (!cat) return NaN;
+    var any = false;
+    var sum = (cat.items || []).reduce(function (a, it) {
+      var v = num(it.invested);
+      if (!isFinite(v)) return a;
+      any = true;
+      return a + v;
+    }, 0);
+    return any ? sum : NaN;
+  }
+
   /* ── 시리즈 구성 ─────────────────────────────────────────── */
 
   function baseRows() {
@@ -166,6 +197,27 @@
       });
     }
     return list;
+  }
+
+  /**
+   * 그려진 시리즈별 "투자원금 ↔ 현재 평가금액" 비교.
+   * 벤치마크(entity 없음)는 내 보유가 아니므로 제외한다.
+   * 격차는 차트의 두 선 사이 간격과 반드시 같은 값이어야 하므로 여기서 한 번만 계산해
+   * 기준선과 텍스트 요약이 같은 숫자를 쓰게 한다(API 의 totalPnl 과도 일치 확인됨).
+   */
+  function costBasisRows(series) {
+    var out = [];
+    series.forEach(function (s) {
+      if (!s.entity) return;
+      var inv = investedOf(s.entity);
+      if (!isFinite(inv) || inv <= 0) return;
+      var cur = currentValueOf(s.entity);
+      out.push({
+        id: s.id, name: s.name, color: s.color,
+        invested: inv, value: cur, diff: cur - inv, pct: (cur - inv) / inv
+      });
+    });
+    return out;
   }
 
   function projectionSeries() {
@@ -429,6 +481,34 @@
     });
   }
 
+  /** 투자원금 대비 손익 한 줄씩 — 차트의 격차를 색 없이도 읽을 수 있게 하는 relief. */
+  function renderPnlSummary(host, rows, linesShown) {
+    host.innerHTML = '';
+    if (!rows.length) { host.hidden = true; return; }
+    host.hidden = false;
+    rows.forEach(function (r) {
+      var row = document.createElement('div');
+      row.className = 'viz-pnl-row';
+      if (linesShown) {
+        var key = document.createElement('span');
+        key.className = 'viz-pnl-key';
+        key.style.color = r.color;              // 점선 키 — 차트의 기준선과 같은 형태·색
+        row.appendChild(key);
+      }
+      var nm = document.createElement('span');
+      nm.className = 'viz-pnl-name';
+      nm.textContent = r.name;                  // API 문자열 — textContent 로만
+      var txt = document.createElement('span');
+      txt.textContent = '투자원금 ' + C.fullWon(r.invested) + ' 대비';
+      var val = document.createElement('b');
+      val.className = 'viz-pnl-val ' + (r.diff >= 0 ? 'up' : 'down');
+      val.textContent = (r.diff >= 0 ? '+' : '') + C.fullWon(r.diff) +
+        ' (' + (r.pct >= 0 ? '+' : '') + (r.pct * 100).toFixed(2) + '%)';
+      row.appendChild(nm); row.appendChild(txt); row.appendChild(val);
+      host.appendChild(row);
+    });
+  }
+
   /** 표 보기 — light 모드 팔레트의 contrast WARN 에 대한 relief(모든 값이 색 없이 읽힌다). */
   function renderTable(host, series, fmt) {
     host.innerHTML = '';
@@ -477,6 +557,32 @@
     var note = $('trendNote');
     var msgs = [];
 
+    // 투자원금은 화폐 단위 상수다 — 100 기준 정규화(%) 축에는 얹을 수 없어 숨긴다.
+    // (% 모드의 손익 기준은 이미 그려져 있는 100 기준선이 맡는다.)
+    var basis = costBasisRows(series);
+    var showRefLines = state.mode === 'abs' && basis.length <= MAX_REF_LINES;
+    var refLines = showRefLines ? basis.map(function (r) {
+      return {
+        id: r.id + '@invested', value: r.invested, color: r.color,
+        // 라벨에 금액을 넣지 않는다 — 축약(1.0억)은 손익 규모(수만~수십만원)를 가려 오히려 오독을 부른다.
+        // 정확한 금액은 바로 아래 손익 요약 줄이 원 단위로 책임진다.
+        label: r.name + ' 원금'
+      };
+    }) : [];
+
+    if (basis.length) {
+      if (state.mode === 'pct') {
+        msgs.push('수익률(%) 모드에서는 투자원금 기준선을 숨깁니다(화폐 단위라 100 기준 축에 얹을 수 없습니다) — ' +
+          '기준은 100 선이고, 원금 대비 손익은 아래 숫자로 보여 줍니다.');
+      } else if (!showRefLines) {
+        msgs.push('선택한 대상이 ' + basis.length + '개라 원금 기준선은 생략했습니다' +
+          '(' + MAX_REF_LINES + '개 이하일 때 표시) — 원금 대비 손익은 아래 숫자로 보여 줍니다.');
+      } else {
+        msgs.push('촘촘한 점선은 각 대상의 투자원금(평단가×수량)이며 매매가 있을 때만 바뀝니다 — ' +
+          '추이선과의 간격이 평가손익입니다.');
+      }
+    }
+
     if (state.historyError) msgs.push('추이 데이터를 불러오지 못했습니다: ' + state.historyError);
     if (state.benchmarkNote) msgs.push(state.benchmarkNote);
     if (state.history.length) {
@@ -497,6 +603,7 @@
 
     charts.trend = C.renderLineChart($('trendChart'), {
       series: series,
+      refLines: refLines,
       mode: state.mode,
       unit: state.unit,
       title: '자산 추이',
@@ -506,6 +613,7 @@
     });
 
     renderLegend($('trendLegend'), series);
+    renderPnlSummary($('trendPnl'), basis, showRefLines);
     $('trendTableWrap').hidden = !state.showTrendTable;
     if (state.showTrendTable) {
       renderTable($('trendTable'), series, state.mode === 'pct' ? C.idxFmt : C.fullWon);

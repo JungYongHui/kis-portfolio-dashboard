@@ -292,13 +292,20 @@
   /* ── 선형 추이 차트 ──────────────────────────────────────
    * opts = {
    *   series: [{ id, name, color, points:[{date,value,estimated}], dash:bool, muted:bool }],
+   *   refLines: [{ id, value, color, label }],   // 가로 기준선(투자원금 등) — 시계열이 아닌 상수
    *   unit, mode: 'abs'|'pct', height
    * }
+   *
+   * refLines 는 "데이터"가 아니라 "주석"이다 — 시리즈와 같은 색을 쓰되 더 가늘고 옅게,
+   * 추정(4 3)/투영·벤치마크(5 4)와 겹치지 않는 점 패턴(1.5 4)으로 그려 형태로도 구분한다.
+   * 값이 축 밖이면 선이 잘려 "원금보다 위/아래"라는 사실 자체가 사라지므로 축 범위에 포함한다.
+   *
    * 반환: { redraw() } — 컨테이너 리사이즈 시 호출.
    */
   function renderLineChart(container, opts) {
     var o = opts || {};
     var series = (o.series || []).filter(function (s) { return s.points && s.points.length; });
+    var refLines = (o.refLines || []).filter(function (r) { return r && isFinite(num(r.value)); });
     clear(container);
     container.classList.add('viz-plot');
 
@@ -347,6 +354,12 @@
         if (v < vmin) vmin = v;
         if (v > vmax) vmax = v;
       });
+    });
+    // 기준선도 축 안에 들어와야 한다 — 잘리면 "원금 위/아래"라는 정보 자체가 사라진다.
+    refLines.forEach(function (r) {
+      var v = num(r.value);
+      if (v < vmin) vmin = v;
+      if (v > vmax) vmax = v;
     });
     if (!isFinite(vmin)) { vmin = 0; vmax = 1; }
     if (vmin === vmax) { vmin -= Math.abs(vmin) * 0.05 + 1; vmax += Math.abs(vmax) * 0.05 + 1; }
@@ -405,6 +418,34 @@
         svg.appendChild(el('line', {
           x1: M.l, x2: M.l + iw, y1: Y(100), y2: Y(100), class: 'viz-baseline'
         }));
+      }
+
+      // 투자원금 등 가로 기준선 — 시리즈보다 먼저(= 아래에) 그려 데이터를 가리지 않는다.
+      if (refLines.length) {
+        var gRef = el('g', { class: 'viz-reflines' });
+        var placed = [];
+        refLines.map(function (r) { return { r: r, y: Y(num(r.value)) }; })
+          .sort(function (a, b) { return a.y - b.y; })
+          .forEach(function (item) {
+            var y = item.y;
+            if (y < M.t - 1 || y > M.t + ih + 1) return;
+            var line = el('line', {
+              x1: M.l, x2: M.l + iw, y1: y, y2: y, class: 'viz-refline'
+            });
+            line.style.stroke = item.r.color || 'var(--viz-muted)';
+            gRef.appendChild(line);
+
+            if (!item.r.label) return;
+            // 직접 라벨은 선 바로 위(왼쪽 정렬) — 끝점 값 라벨(오른쪽)과 자리를 나눠 갖는다.
+            var ly = y - 4;
+            placed.forEach(function (p) { if (Math.abs(ly - p) < 11) ly = p + 11; });
+            ly = Math.max(M.t + 8, Math.min(M.t + ih - 1, ly));
+            placed.push(ly);
+            var lab = el('text', { x: M.l + 4, y: ly, class: 'viz-refline-label', 'text-anchor': 'start' });
+            lab.textContent = item.r.label;
+            gRef.appendChild(lab);
+          });
+        svg.appendChild(gRef);
       }
 
       // x축 라벨 — 최대 4개만(모바일 폭에서 겹치지 않게)
