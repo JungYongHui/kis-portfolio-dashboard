@@ -36,8 +36,12 @@
       <div class="banner-body">
         <strong class="banner-title" id="saveBannerTitle"></strong>
         <p class="banner-text" id="saveBannerText"></p>
+        <!-- scope:'category' 저장 시 서버가 돌려준 items(종목별 이전/이후 목표%)를 펼쳐 보여준다.
+             카테고리 목표는 종목 목표의 SUM 이라 "다른 종목 숫자도 같이 바뀐" 이유를 여기서 설명한다. -->
+        <div class="banner-detail" id="saveBannerDetail" hidden></div>
       </div>
       <div class="banner-actions">
+        <button type="button" class="link-btn" id="saveBannerDetailBtn" aria-expanded="false" hidden>재배분 내역</button>
         <button type="button" class="link-btn" id="saveBannerUndoBtn" hidden>되돌리기</button>
         <button type="button" class="link-btn" id="saveBannerCloseBtn" aria-label="배너 닫기">닫기</button>
       </div>
@@ -209,7 +213,85 @@
   </div>
 </div>
 
-<!-- 목표비중 수정 (종목 전용 — 카테고리 목표는 시트 수식이라 편집 불가) -->
+<!-- 종목 상세 (주식앱 스타일). 보유현황 카드 클릭 → 이 시트.
+     현금(row 7, hasCode:false)만 아래 #cashOverlay 로 분기한다. -->
+<div class="overlay" id="detailOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+    <div class="detail-head">
+      <div>
+        <h2 id="detailTitle">종목 상세</h2>
+        <p class="sheet-desc" id="detailSub"></p>
+      </div>
+      <button type="button" class="ghost-btn ghost-btn-dark" id="detailCloseX" aria-label="닫기">✕</button>
+    </div>
+
+    <div class="detail-hero">
+      <div class="detail-hero-label">평가금액</div>
+      <div class="detail-hero-value" id="detailValue">–</div>
+      <div class="detail-hero-pnl" id="detailPnl"></div>
+    </div>
+
+    <dl class="detail-grid" id="detailGrid"></dl>
+
+    <div class="detail-section">
+      <div class="detail-section-title">비중</div>
+      <div class="bar-wrap" id="detailBar"></div>
+    </div>
+
+    <div class="detail-section">
+      <div class="detail-section-title">리밸런싱</div>
+      <div id="detailRebal"></div>
+    </div>
+
+    <!-- GET priceSources 로 채운다(실패해도 모달은 그대로 뜬다). -->
+    <p class="sheet-hint" id="detailFresh"></p>
+
+    <div class="sheet-actions">
+      <button type="button" class="btn btn-secondary" id="detailCloseBtn">닫기</button>
+      <button type="button" class="btn btn-primary" id="detailTargetBtn">목표비중 수정</button>
+    </div>
+  </div>
+</div>
+
+<!-- 현금 상세 — 어느 계좌에 얼마 있는지. GET cashBreakdown + CMA 수동입력(POST setManualCma). -->
+<div class="overlay" id="cashOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="cashTitle">
+    <div class="detail-head">
+      <div>
+        <h2 id="cashTitle">현금 상세</h2>
+        <p class="sheet-desc" id="cashSub">계좌별 잔액</p>
+      </div>
+      <button type="button" class="ghost-btn ghost-btn-dark" id="cashCloseX" aria-label="닫기">✕</button>
+    </div>
+
+    <div class="detail-hero">
+      <div class="detail-hero-label">현금 합계</div>
+      <div class="detail-hero-value" id="cashTotal">–</div>
+    </div>
+
+    <dl class="detail-grid" id="cashGrid"></dl>
+
+    <p class="sheet-hint" id="cashUpdatedAt"></p>
+
+    <!-- CMA 는 KIS 조회 대상이 아니라 사용자가 직접 넣는 값이다(Script Property MANUAL_CMA_CASH). -->
+    <div class="detail-section">
+      <div class="detail-section-title">CMA 잔액 직접 입력</div>
+      <label class="field">
+        <span>CMA 금액 (원)</span>
+        <input type="number" id="cashCmaInput" inputmode="numeric" step="1" min="0" autocomplete="off" placeholder="예: 5919892">
+      </label>
+      <p class="sheet-err" id="cashError" hidden></p>
+      <button type="button" class="btn btn-secondary btn-block" id="cashCmaSaveBtn">CMA 저장</button>
+      <p class="viz-note">저장하면 예수금을 다시 조회해 현금 합계와 안전자산 비중이 갱신됩니다.</p>
+    </div>
+
+    <div class="sheet-actions">
+      <button type="button" class="btn btn-secondary" id="cashCloseBtn">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 목표비중 수정 — 종목(E열 직접) / 카테고리(소속 종목 비례 재분배) 겸용 -->
 <div class="overlay" id="targetOverlay" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="targetTitle">
     <h2 id="targetTitle">목표비중 수정</h2>
@@ -224,7 +306,7 @@
       <button type="button" class="btn btn-secondary" id="targetCancelBtn">취소</button>
       <button type="button" class="btn btn-primary" id="targetSaveBtn">저장</button>
     </div>
-    <p class="sheet-hint">
+    <p class="sheet-hint" id="targetHint">
       전체 자산 대비 비중입니다(카테고리 내 비중이 아님). 합계가 100%를 벗어나도 저장은 되며
       경고만 표시됩니다. 저장 즉시 다음 리밸런싱 계획이 새 값으로 다시 계산됩니다.
     </p>

@@ -678,6 +678,109 @@ body {
 .banner-title { display: block; font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
 .banner-text { margin: 4px 0 0; font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
 .banner-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 2px; }
+.banner-detail { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; }
+.banner-detail[hidden] { display: none; }
+.redist-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 3px 0;
+  font-variant-numeric: tabular-nums;
+}
+.redist-name { min-width: 0; overflow-wrap: anywhere; }
+.redist-val { flex: 0 0 auto; color: var(--text); }
+.redist-val .redist-prev { color: var(--text-faint); font-weight: 400; }
+
+/* ── 상세 모달(종목/현금) ───────────────────────── */
+.detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.detail-head h2 { margin-bottom: 2px; }
+.detail-head .sheet-desc { margin-bottom: 12px; overflow-wrap: anywhere; }
+.ghost-btn-dark {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  font-size: 14px;
+}
+
+.detail-hero {
+  background: var(--surface-2);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.detail-hero-label { font-size: 11.5px; color: var(--text-muted); }
+.detail-hero-value {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.detail-hero-pnl { font-size: 13px; font-weight: 600; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.detail-hero-pnl.up { color: var(--up); }
+.detail-hero-pnl.down { color: var(--down); }
+
+.detail-grid { margin: 0 0 12px; }
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 7px 2px;
+  border-bottom: 1px solid var(--border);
+}
+.detail-row:last-child { border-bottom: 0; }
+.detail-row dt { font-size: 12.5px; color: var(--text-muted); flex: 0 0 auto; }
+.detail-row dd {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: right;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.detail-row dd.up { color: var(--up); }
+.detail-row dd.down { color: var(--down); }
+.detail-row.is-total { border-top: 1px solid var(--border); border-bottom: 0; }
+.detail-row.is-total dt { color: var(--text); font-weight: 700; }
+.detail-row.is-total dd { font-size: 15px; font-weight: 700; }
+
+.detail-section { margin: 14px 0; }
+.detail-section-title { font-size: 11px; color: var(--text-muted); font-weight: 600; margin-bottom: 4px; }
+.detail-section .badge { margin-top: 0; }
+.detail-rebal-note { font-size: 12px; color: var(--text-muted); margin: 6px 0 0; }
+
+/* 카드 자체가 상세 모달 트리거 — 키보드로도 열 수 있어야 한다. */
+.card.is-tappable { cursor: pointer; }
+.card.is-tappable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card.is-tappable:active { background: var(--surface-2); }
+.card-chevron { color: var(--text-faint); font-size: 12px; margin-left: 6px; flex: 0 0 auto; }
+
+/* 카테고리 헤더의 "목표비중 수정" — 종목 카드와 같은 링크 스타일.
+   좁은 화면에서 목표/현재 수치와 같은 줄에 밀어 넣으면 터치 타깃이 화면 끝에 걸리므로
+   아래 줄에 오른쪽 정렬로 떨어뜨린다(카드의 "목표비중 수정"과 같은 위치 감각). */
+.cat-header { flex-wrap: wrap; }
+.cat-name { flex: 0 0 auto; }
+.cat-pct { flex: 1 1 auto; text-align: right; }
+.cat-edit-btn {
+  flex: 0 0 100%;
+  margin-top: 0;
+  padding: 2px 4px;
+  min-height: 30px;
+  text-align: right;
+  color: var(--text-muted);
+  font-weight: 600;
+}
 
 /* ── 리밸런싱 주문 ──────────────────────────────── */
 .order-note { font-size: 12px; color: var(--text-muted); margin: 4px 0 10px; line-height: 1.5; }
