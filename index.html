@@ -22,6 +22,7 @@
 <nav class="tabs" id="tabBar" role="tablist" aria-label="화면 전환">
   <button type="button" class="tab" id="tabHoldings" role="tab" data-view="holdings" aria-selected="true" aria-controls="viewHoldings">보유 현황</button>
   <button type="button" class="tab" id="tabTrends" role="tab" data-view="trends" aria-selected="false" aria-controls="viewTrends">추이 분석</button>
+  <button type="button" class="tab" id="tabOrders" role="tab" data-view="orders" aria-selected="false" aria-controls="viewOrders">리밸런싱 주문</button>
 </nav>
 
 <nav class="chips" id="chipBar" aria-label="카테고리 필터"></nav>
@@ -30,6 +31,17 @@
   <div id="statusBox" class="status" hidden></div>
 
   <section id="viewHoldings" role="tabpanel" aria-labelledby="tabHoldings">
+    <!-- 목표비중 저장 결과 배너. 네이티브 alert 를 쓰지 않는다(자동화 차단 + UX 불일치). -->
+    <div class="banner" id="saveBanner" role="status" hidden>
+      <div class="banner-body">
+        <strong class="banner-title" id="saveBannerTitle"></strong>
+        <p class="banner-text" id="saveBannerText"></p>
+      </div>
+      <div class="banner-actions">
+        <button type="button" class="link-btn" id="saveBannerUndoBtn" hidden>되돌리기</button>
+        <button type="button" class="link-btn" id="saveBannerCloseBtn" aria-label="배너 닫기">닫기</button>
+      </div>
+    </div>
     <div id="list" aria-live="polite"></div>
   </section>
 
@@ -120,6 +132,48 @@
     </section>
 
   </section>
+
+  <!-- ── 리밸런싱 실주문 ─────────────────────────────────────────
+       흐름은 반드시 계획(읽기전용) → 체크박스 선택 → 커스텀 확인 모달 → 전송 순서다.
+       `executeOrders` 호출부는 js/views/orders.js 안의 확인 모달 핸들러 단 한 곳뿐이다. -->
+  <section id="viewOrders" role="tabpanel" aria-labelledby="tabOrders" hidden>
+
+    <section class="viz-card">
+      <div class="viz-card-head">
+        <h2>리밸런싱 계획</h2>
+        <span class="viz-card-actions">
+          <button type="button" class="link-btn" id="orderReloadBtn">계획 새로고침</button>
+        </span>
+      </div>
+      <p class="order-note" id="orderLimitNote">주문 금액 상한을 불러오는 중…</p>
+      <div class="order-toolbar">
+        <button type="button" class="seg-btn" id="orderSelectAllBtn">전체 선택</button>
+        <button type="button" class="seg-btn" id="orderClearBtn">선택 해제</button>
+      </div>
+      <div id="orderPlanList" aria-live="polite"></div>
+      <div id="orderSummary" class="order-summary" hidden></div>
+      <button type="button" class="btn btn-danger btn-block" id="orderExecBtn" disabled>주문 실행</button>
+      <p class="viz-note">
+        “주문 실행”을 눌러도 바로 주문되지 않습니다. 확인 창에서 내용을 한 번 더 확인해야 전송됩니다.
+      </p>
+    </section>
+
+    <section class="viz-card" id="orderResultCard" hidden>
+      <div class="viz-card-head"><h2>주문 결과</h2></div>
+      <div id="orderResultList"></div>
+    </section>
+
+    <section class="viz-card">
+      <div class="viz-card-head">
+        <h2>주문 이력 (감사로그)</h2>
+        <span class="viz-card-actions">
+          <button type="button" class="link-btn" id="orderLogReloadBtn">새로고침</button>
+        </span>
+      </div>
+      <div id="orderLogList"></div>
+    </section>
+
+  </section>
 </main>
 
 <footer class="page-foot">
@@ -151,12 +205,56 @@
   </div>
 </div>
 
+<!-- 목표비중 수정 (종목 전용 — 카테고리 목표는 시트 수식이라 편집 불가) -->
+<div class="overlay" id="targetOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="targetTitle">
+    <h2 id="targetTitle">목표비중 수정</h2>
+    <p class="sheet-desc" id="targetDesc"></p>
+    <label class="field">
+      <span>새 목표비중 (%)</span>
+      <input type="number" id="targetInput" inputmode="decimal" step="0.1" min="0" max="100"
+             autocomplete="off" placeholder="예: 8">
+    </label>
+    <p class="sheet-err" id="targetError" hidden></p>
+    <div class="sheet-actions">
+      <button type="button" class="btn btn-secondary" id="targetCancelBtn">취소</button>
+      <button type="button" class="btn btn-primary" id="targetSaveBtn">저장</button>
+    </div>
+    <p class="sheet-hint">
+      전체 자산 대비 비중입니다(카테고리 내 비중이 아님). 합계가 100%를 벗어나도 저장은 되며
+      경고만 표시됩니다. 저장 즉시 다음 리밸런싱 계획이 새 값으로 다시 계산됩니다.
+    </p>
+  </div>
+</div>
+
+<!-- 실주문 확인. 네이티브 confirm() 을 쓰지 않는다 — `executeOrders` 는 이 모달의
+     확인 버튼에서만 호출된다(다른 코드 경로 없음). -->
+<div class="overlay" id="orderConfirmOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="orderConfirmTitle"
+       aria-describedby="orderConfirmWarn">
+    <h2 id="orderConfirmTitle">실제 주문을 전송합니다</h2>
+    <p class="sheet-warn" id="orderConfirmWarn">
+      모의투자가 아닙니다. 확인을 누르면 <b>실제 증권 계좌로 매수/매도 주문이 즉시 전송</b>되며
+      취소할 수 없습니다.
+    </p>
+    <div id="orderConfirmList" class="confirm-list"></div>
+    <div id="orderConfirmTotals" class="confirm-totals"></div>
+    <p class="sheet-hint" id="orderConfirmLimit"></p>
+    <p class="sheet-err" id="orderConfirmError" hidden></p>
+    <div class="sheet-actions">
+      <button type="button" class="btn btn-secondary" id="orderCancelBtn">취소</button>
+      <button type="button" class="btn btn-danger" id="orderConfirmBtn">네, 주문을 전송합니다</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="js/config.js"></script>
 <script src="js/api.js"></script>
 <script src="js/charts.js"></script>
 <script src="js/views/trends.js"></script>
+<script src="js/views/orders.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
