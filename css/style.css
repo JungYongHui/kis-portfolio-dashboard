@@ -772,6 +772,14 @@ body {
 .cat-header { flex-wrap: wrap; }
 .cat-name { flex: 0 0 auto; }
 .cat-pct { flex: 1 1 auto; text-align: right; }
+.cat-pnl {
+  flex: 0 0 100%;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 600;
+}
+.cat-pnl.up { color: var(--up); }
+.cat-pnl.down { color: var(--down); }
 .cat-edit-btn {
   flex: 0 0 100%;
   margin-top: 0;

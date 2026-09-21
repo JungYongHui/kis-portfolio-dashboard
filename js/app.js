@@ -727,6 +727,7 @@
   function cardHtml(item) {
     var targetPct = num(item.targetPct) * 100;
     var curPct = num(item.curPct) * 100;
+    var pnlAmt = num(item.value) - num(item.invested);
     var pnlUp = num(item.pnlPct) >= 0;
 
     // 카드 전체가 상세 모달 트리거다. <article> 이라 role/tabindex 를 직접 준다.
@@ -741,7 +742,8 @@
           '</div>' +
           '<div class="card-num">' +
             '<div class="card-value">' + esc(won(item.value)) + '원</div>' +
-            '<div class="card-pnl ' + (pnlUp ? 'up' : 'down') + '">' + esc(signedPct(item.pnlPct)) + '</div>' +
+            '<div class="card-pnl ' + (pnlUp ? 'up' : 'down') + '">' + esc(signedPct(item.pnlPct)) +
+              ' (' + esc(signedWon(pnlAmt)) + '원)</div>' +
           '</div>' +
         '</div>' +
         '<div class="card-meta">' +
@@ -778,6 +780,13 @@
         .filter(function (r) { return isFinite(r); });
       var anchorRow = rows.length ? Math.min.apply(null, rows) : null;
 
+      // 카테고리 손익 = 소속 종목(빈 행 제외) 평가금액/투자원금 합. 종목 카드와 같은 계산식(value-invested).
+      var catInvested = items.reduce(function (a, it) { return a + num(it.invested); }, 0);
+      var catValue = items.reduce(function (a, it) { return a + num(it.value); }, 0);
+      var catPnlAmt = catValue - catInvested;
+      var catPnlPct = catInvested ? catPnlAmt / catInvested : 0;
+      var catPnlUp = catPnlAmt >= 0;
+
       html += '<section class="cat-section">' +
         '<div class="cat-header">' +
           '<span class="cat-name">' + esc(cat.name) + '</span>' +
@@ -786,6 +795,8 @@
           '<span class="cat-pct">목표 <b>' + esc(pct(cat.targetPct)) + '</b>' +
             '<span class="cat-ro" title="소속 종목 목표비중의 합계입니다. 수정하면 종목들이 비례 재분배됩니다.">합계</span> · ' +
             '현재 <b>' + esc(pct(cat.currentPct)) + '</b></span>' +
+          '<div class="cat-pnl ' + (catPnlUp ? 'up' : 'down') + '">수익률 ' +
+            esc(signedPct(catPnlPct, 2)) + ' (' + esc(signedWon(catPnlAmt)) + '원)</div>' +
           (anchorRow === null ? '' :
             '<button type="button" class="link-btn target-edit-btn cat-edit-btn"' +
               ' data-scope="category"' +
