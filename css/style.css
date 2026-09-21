@@ -301,6 +301,7 @@ body {
 .btn-secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
 .btn-primary { background: var(--accent); color: var(--accent-text); }
 .btn:disabled { opacity: 0.55; }
+.btn[hidden] { display: none; }
 
 /* ── 토스트 ─────────────────────────────────────── */
 .toast {
@@ -740,6 +741,14 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .confirm-row.is-over { color: var(--text-faint); text-decoration: line-through; }
+.confirm-row.is-changed { background: var(--up-soft); border-radius: 8px; padding-left: 6px; padding-right: 6px; }
+.confirm-prev {
+  font-size: 11px;
+  color: var(--up);
+  padding: 0 6px 6px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 .confirm-side { font-weight: 700; flex: 0 0 auto; }
 .confirm-side.buy { color: var(--up); }
 .confirm-side.sell { color: var(--down); }

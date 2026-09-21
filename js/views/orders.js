@@ -3,8 +3,8 @@
  *
  * ── 안전 설계 (trading-safety-review 스킬 / docs/api-contract.md "실주문 안전장치") ──
  *
- *  1. 흐름은 항상 `rebalancePlan`(읽기전용 dry-run) → 체크박스 선택 → 커스텀 확인 모달 →
- *     `executeOrders` 순서다. 이 순서를 건너뛰는 코드 경로는 존재하지 않는다.
+ *  1. 흐름은 항상 `rebalancePlan`(읽기전용 dry-run) → 체크박스 선택 → **계획 재조회·대조** →
+ *     커스텀 확인 모달 → `executeOrders` 순서다. 이 순서를 건너뛰는 코드 경로는 존재하지 않는다.
  *  2. `API.apiPost('executeOrders', ...)` 호출은 이 파일의 `executeConfirmed()` **단 하나**뿐이고,
  *     그 함수는 `#orderConfirmBtn`(확인 모달의 확인 버튼) click 핸들러에서만 불린다.
  *     그 외에는 어디에서도 참조되지 않으며 `global.OrdersView` 로도 공개하지 않는다.
@@ -13,6 +13,16 @@
  *     같은 주문이 두 번 나가는 것을 막는다(백엔드에 idempotency 키가 없으므로 프론트에서 막아야 한다).
  *  4. **네이티브 `confirm()`/`alert()` 를 쓰지 않는다.** 네이티브 대화상자는 자동화 테스트를 막고
  *     UX 도 어긋난다 — 확인은 기존 오버레이/시트 패턴을 재사용한 커스텀 모달로만 한다.
+ *
+ *  5. **승인한 값 == 전송 시점의 값**을 최대한 맞춘다(리뷰 F1). 서버(`executeOrders`)는 실행 시점에
+ *     `getRebalancePlan()` 을 **새로 계산**하므로, 화면 스냅샷으로 승인하면 시세갱신/목표비중 변경
+ *     때문에 승인값과 실제 주문값이 어긋날 수 있다. 그래서 "주문 실행"을 누르면 모달을 띄우기 **전에**
+ *     `rebalancePlan` 을 다시 조회해 화면에 표시됐던 side/qty/amount 와 대조하고,
+ *     - 달라진 게 있으면 → 경고와 함께 **최신 값으로** 모달을 렌더해 한 번 더 확인을 받는다.
+ *     - 재조회 자체가 실패하면 → **주문을 진행하지 않는다.** 오래된 값으로 전송하지 않는다.
+ *  6. 전송이 실패하면(리뷰 F2·F3) 승인 토큰은 이미 소비된 상태다. 모달을 닫지 않고 에러를 띄운 채
+ *     확인 버튼을 숨겨, 재시도하려면 반드시 5번 흐름(재조회+재확인)을 처음부터 다시 타게 한다.
+ *     네트워크 오류는 "요청이 서버에 도달해 실제로 주문이 나갔을 수도" 있으므로 감사로그를 즉시 재조회한다.
  *
  * 금액 상한은 **서버가 강제한다**(`MAX_ORDER_AMOUNT_PER_ITEM`). 여기서 하는 상한 표시는
  * 사용자 안내일 뿐이며, 프론트 체크를 우회해도 서버가 KIS 호출 전에 차단한다.
@@ -26,13 +36,17 @@
     plan: [],
     planLoaded: false,
     planError: null,
+    planFetchedAt: null,   // state.plan 을 받아온 시각 (모달에 "언제 기준 값인지" 표시)
     selected: {},          // row(문자열 키) -> true
     limits: null,          // {maxOrderAmountPerItem, defaultMaxOrderAmountPerItem, currency, note}
     results: null,         // executeOrders 응답
     log: [],
     logError: null,
     loading: false,
-    executing: false
+    verifying: false,      // "주문 실행" 클릭 후 최신 계획을 재조회하는 중
+    executing: false,
+    sendFailed: false,     // 전송 실패 상태의 모달(확인 버튼을 다시 누를 수 없게 한다)
+    unknownSend: null      // {at, rows} — 결과를 못 받은 전송(주문이 나갔을 수도 있음)
   };
 
   /**
@@ -101,6 +115,22 @@
     return { buy: buy, sell: sell, net: buy - sell };
   }
 
+  /**
+   * 승인 대상 1건의 "사용자가 화면에서 확인한 값" 지문.
+   * 이 셋 중 하나라도 달라지면 승인값과 실제 주문값이 어긋나는 것이므로 재확인을 받는다.
+   */
+  function fingerprint(p) {
+    return { row: Number(p.row), name: p.name, side: String(p.side || ''), qty: num(p.qty), amount: num(p.amount) };
+  }
+
+  function sameFingerprint(a, b) {
+    return !!a && !!b && a.side === b.side && a.qty === b.qty && a.amount === b.amount;
+  }
+
+  function fpText(f) {
+    return f ? (f.side + ' ' + qtyFmt(f.qty) + '주 · ' + won(f.amount) + '원') : '계획에 없음';
+  }
+
   /* ── 계획 렌더 ──────────────────────────────────────────── */
 
   function renderLimitNote() {
@@ -165,10 +195,12 @@
     var box = $('orderSummary');
     var btn = $('orderExecBtn');
 
-    btn.disabled = state.executing || items.length === 0;
+    btn.disabled = state.executing || state.verifying || items.length === 0;
     btn.textContent = state.executing
       ? '전송 중…'
-      : (items.length ? '주문 실행 (' + items.length + '건)' : '주문 실행');
+      : state.verifying
+        ? '최신 계획 확인 중…'
+        : (items.length ? '주문 실행 (' + items.length + '건)' : '주문 실행');
 
     if (!items.length) { box.hidden = true; box.innerHTML = ''; return; }
 
@@ -186,44 +218,150 @@
 
   /* ── 확인 모달 ──────────────────────────────────────────── */
 
-  function openConfirm() {
+  function setExecNotice(msg) {
+    var el = $('orderExecNotice');
+    el.hidden = !msg;
+    el.textContent = msg || '';
+  }
+
+  /**
+   * "주문 실행" 버튼의 핸들러. **여기서 주문이 나가지 않는다.**
+   *
+   * 서버는 실행 시점에 계획을 새로 계산하므로(F1), 모달을 띄우기 전에 `rebalancePlan` 을 다시 받아
+   * 화면에 표시됐던 값과 대조한다. 재조회에 실패하면 오래된 값으로 진행하지 않고 **막는다**.
+   */
+  async function requestConfirm() {
+    if (state.executing || state.verifying) return;
+    if (state.loading) { toast('계획을 불러오는 중입니다. 잠시 후 다시 눌러주세요.'); return; }
+
     var items = selectedItems();
     if (!items.length) { toast('선택된 항목이 없습니다.'); return; }
 
+    // 사용자가 화면에서 보고 고른 값(스냅샷). 재조회 결과는 이것과 대조한다.
+    var before = {};
+    items.forEach(function (p) { before[String(p.row)] = fingerprint(p); });
+    var keys = Object.keys(before);
+
+    setExecNotice(null);
+    state.verifying = true;
+    state.loading = true;
+    $('orderReloadBtn').disabled = true;
+    renderSummary();
+
+    var fresh;
+    try {
+      fresh = await API.apiGet('rebalancePlan');
+    } catch (e) {
+      // 최신 계획을 모르는 채로는 절대 전송하지 않는다.
+      setExecNotice('최신 계획을 확인할 수 없어 주문을 진행하지 않습니다 — ' + e.message +
+        ' 잠시 후 “계획 새로고침”으로 다시 시도해주세요.');
+      toast('최신 계획을 확인할 수 없어 주문을 진행하지 않습니다.');
+      return;
+    } finally {
+      state.verifying = false;
+      state.loading = false;
+      $('orderReloadBtn').disabled = false;
+      renderSummary();
+    }
+
+    applyPlan(fresh);            // state.plan/planFetchedAt 갱신 + 사라진 row 선택 해제
+    renderPlan();
+
+    // 재조회 결과 기준으로 승인 대상과 변경점을 다시 만든다.
+    var after = {};
+    state.plan.forEach(function (p) {
+      if (before[String(p.row)]) after[String(p.row)] = fingerprint(p);
+    });
+
+    var changes = {};            // row 키 -> {before, after|null}
+    var changedCount = 0, removedCount = 0;
+    keys.forEach(function (k) {
+      if (sameFingerprint(before[k], after[k])) return;
+      changes[k] = { before: before[k], after: after[k] || null };
+      changedCount++;
+      if (!after[k]) removedCount++;
+    });
+
+    var liveItems = state.plan.filter(function (p) { return after[String(p.row)]; });
+    if (!liveItems.length) {
+      setExecNotice('선택했던 항목이 최신 계획에서 모두 사라졌습니다 — 주문하지 않았습니다. 계획을 다시 확인해주세요.');
+      toast('최신 계획에 해당 항목이 없어 주문을 진행하지 않습니다.');
+      return;
+    }
+
+    openConfirm(liveItems, changes, changedCount, removedCount);
+  }
+
+  /** 확인 모달을 **최신 계획 값으로** 렌더한다. `requestConfirm()` 에서만 호출된다. */
+  function openConfirm(items, changes, changedCount, removedCount) {
     pendingApproval = {
       rows: items.map(function (p) { return Number(p.row); }),
       count: items.length
     };
 
+    var banner = $('orderConfirmChanged');
+    if (changedCount) {
+      banner.hidden = false;
+      banner.innerHTML =
+        '<b>계획이 갱신되었습니다 — 아래 값으로 다시 확인해주세요.</b><br>' +
+        '방금 다시 조회한 계획에서 ' + changedCount + '건이 조금 전 화면에 표시됐던 값과 달라졌습니다' +
+        (removedCount ? ' (그중 ' + removedCount + '건은 계획에서 빠져 주문 대상에서 제외했습니다)' : '') + '.';
+    } else {
+      banner.hidden = true;
+      banner.innerHTML = '';
+    }
+
     var t = totalsOf(items);
     $('orderConfirmList').innerHTML = items.map(function (p) {
-      return '<div class="confirm-row' + (overLimit(p) ? ' is-over' : '') + '">' +
+      var ch = changes[String(p.row)];
+      return '<div class="confirm-row' + (overLimit(p) ? ' is-over' : '') + (ch ? ' is-changed' : '') + '">' +
         '<span class="confirm-side ' + (p.side === '매수' ? 'buy' : 'sell') + '">' + esc(p.side) + '</span>' +
         '<span class="confirm-name">' + esc(p.name) + '</span>' +
         '<span class="confirm-qty">' + esc(qtyFmt(p.qty)) + '주</span>' +
         '<span class="confirm-amt">' + esc(won(p.amount)) + '원</span>' +
-        '</div>';
+        '</div>' +
+        (ch
+          ? '<div class="confirm-prev">변경됨 — 조금 전 표시값: ' + esc(fpText(ch.before)) + '</div>'
+          : '');
     }).join('');
 
     $('orderConfirmTotals').innerHTML =
       '<div class="order-summary-row"><span>총 ' + items.length + '건</span>' +
       '<b>매수 ' + esc(won(t.buy)) + '원 · 매도 ' + esc(won(t.sell)) + '원</b></div>';
 
+    $('orderConfirmFresh').textContent =
+      '위 값은 ' + when(state.planFetchedAt && state.planFetchedAt.toISOString()) + ' 에 다시 조회한 계획 기준입니다. ' +
+      '서버는 전송 시점의 계획으로 한 번 더 계산해 주문합니다.';
+
     $('orderConfirmLimit').textContent = state.limits
       ? '종목당 상한 ' + won(state.limits.maxOrderAmountPerItem) + '원. 초과 항목은 전송되지 않고 차단 결과로만 기록됩니다.'
       : '주문 금액 상한을 확인하지 못했습니다. 서버 상한은 그대로 적용됩니다.';
 
+    resetConfirmButtons();
+
     var err = $('orderConfirmError');
     err.hidden = true;
-    err.textContent = '';
+    err.innerHTML = '';
 
     $('orderConfirmOverlay').hidden = false;
     $('orderCancelBtn').focus();
   }
 
+  /** 확인/취소 버튼을 "아직 전송 전" 상태로 되돌린다. */
+  function resetConfirmButtons() {
+    state.sendFailed = false;
+    var ok = $('orderConfirmBtn');
+    var cancel = $('orderCancelBtn');
+    ok.hidden = false;
+    ok.disabled = false;
+    cancel.disabled = false;
+    cancel.textContent = '취소';
+  }
+
   function closeConfirm() {
     pendingApproval = null;      // 승인 토큰은 모달을 벗어나는 순간 무효화한다.
     $('orderConfirmOverlay').hidden = true;
+    resetConfirmButtons();
   }
 
   /**
@@ -247,18 +385,50 @@
       var results = await API.apiPost('executeOrders', { approvedRows: approval.rows });
       state.results = results || [];
       $('orderConfirmOverlay').hidden = true;
+      resetConfirmButtons();
       state.selected = {};
+      state.unknownSend = null;
+      renderLogWarn();
       renderResults();
       toast('주문 요청이 처리됐습니다. 결과를 확인하세요.');
       loadPlan(true);
       loadLog();
     } catch (e) {
+      // 토큰이 없어 fetch 전에 실패한 경우를 빼면, 요청이 서버에 도달해 **주문이 실제로 나갔을 수도** 있다.
+      // (백엔드는 이런 예외도 감사로그에 남긴다 — docs/api-contract.md "실주문 안전장치")
+      var maybeSent = !(e && e.code === 'no_token');
+
+      if (maybeSent) {
+        state.unknownSend = { at: new Date(), rows: approval.rows.slice() };
+        renderLogWarn();
+        loadLog();               // 사용자가 확인해야 할 바로 그 정보를 즉시 갱신한다.
+      }
+
+      // 승인 토큰은 이미 소비됐다. 확인 버튼을 다시 누르면 아무 일도 안 일어나는 것처럼 보이므로
+      // 버튼을 숨기고, 재시도는 "주문 실행"부터 다시(= 계획 재조회부터) 타도록 안내한다.
+      state.sendFailed = true;
+      $('orderConfirmBtn').hidden = true;
+      $('orderCancelBtn').textContent = '닫기';
+
       var err = $('orderConfirmError');
       err.hidden = false;
-      err.textContent = '전송 실패: ' + e.message;
+      err.innerHTML = maybeSent
+        ? '<b>네트워크 오류로 결과를 확인할 수 없습니다 — 주문이 실제로 전송됐을 수 있습니다.</b><br>' +
+          '(' + esc(e.message) + ')<br>' +
+          '아래 “주문 이력(감사로그)”을 꼭 확인하세요 — 방금 자동으로 다시 불러왔습니다. ' +
+          '이력을 확인하기 전에는 재시도하지 마세요(중복 주문이 됩니다).<br>' +
+          '재시도하려면 이 창을 닫고 “주문 실행”을 처음부터 다시 누르세요 — 최신 계획을 다시 확인합니다.'
+        : '<b>전송하지 못했습니다 — 주문은 나가지 않았습니다.</b><br>' +
+          '(' + esc(e.message) + ')<br>' +
+          '이 창을 닫고 토큰을 확인한 뒤 “주문 실행”을 다시 누르세요.';
+
+      toast(maybeSent
+        ? '전송 결과를 확인할 수 없습니다 — 주문 이력을 확인하세요.'
+        : '전송 실패: ' + e.message);
     } finally {
       state.executing = false;
-      $('orderConfirmBtn').disabled = false;
+      // 실패 상태에서는 확인 버튼을 되살리지 않는다(승인 토큰이 이미 소비돼 무의미한 클릭이 된다).
+      if (!state.sendFailed) $('orderConfirmBtn').disabled = false;
       $('orderCancelBtn').disabled = false;
       renderPlan();
     }
@@ -321,8 +491,23 @@
 
   /* ── 감사로그 ───────────────────────────────────────────── */
 
+  /**
+   * 결과를 못 받은 전송이 있으면 감사로그 카드 위에 경고를 남긴다.
+   * 모달을 닫은 뒤에도 "확인해야 한다"는 사실이 사라지지 않도록 뷰에 붙여 둔다.
+   */
+  function renderLogWarn() {
+    var el = $('orderLogWarn');
+    if (!state.unknownSend) { el.hidden = true; el.textContent = ''; return; }
+    el.hidden = false;
+    el.textContent =
+      when(state.unknownSend.at.toISOString()) + ' 전송한 ' + state.unknownSend.rows.length +
+      '건(row ' + state.unknownSend.rows.join(', ') + ')의 결과를 받지 못했습니다. ' +
+      '주문이 실제로 전송됐을 수 있으니 아래 이력에서 해당 row 를 반드시 확인하세요.';
+  }
+
   function renderLog() {
     var list = $('orderLogList');
+    renderLogWarn();
     if (state.logError) {
       list.innerHTML = '<div class="empty">이력을 불러오지 못했습니다: ' + esc(state.logError) + '</div>';
       return;
@@ -359,23 +544,29 @@
     renderPlan();
   }
 
+  /** 새로 받은 계획을 state 에 반영한다(`loadPlan` 과 "주문 실행" 직전 재조회가 함께 쓴다). */
+  function applyPlan(plan) {
+    state.plan = plan || [];
+    state.planError = null;
+    state.planLoaded = true;
+    state.planFetchedAt = new Date();
+    // 계획에서 사라진 row 의 선택 상태는 버린다(존재하지 않는 row 를 승인하지 않기 위해).
+    var live = {};
+    state.plan.forEach(function (p) { live[String(p.row)] = true; });
+    Object.keys(state.selected).forEach(function (k) {
+      if (!live[k]) delete state.selected[k];
+    });
+  }
+
   async function loadPlan(silent) {
     if (state.loading) return;
     state.loading = true;
     $('orderReloadBtn').disabled = true;
     if (!silent) { state.planLoaded = false; renderPlan(); }
+    setExecNotice(null);
 
     try {
-      var plan = await API.apiGet('rebalancePlan');
-      state.plan = plan || [];
-      state.planError = null;
-      state.planLoaded = true;
-      // 계획에서 사라진 row 의 선택 상태는 버린다(존재하지 않는 row 를 승인하지 않기 위해).
-      var live = {};
-      state.plan.forEach(function (p) { live[String(p.row)] = true; });
-      Object.keys(state.selected).forEach(function (k) {
-        if (!live[k]) delete state.selected[k];
-      });
+      applyPlan(await API.apiGet('rebalancePlan'));
     } catch (e) {
       state.planError = e.message;
       state.planLoaded = true;
@@ -423,24 +614,27 @@
       var key = cb.dataset.row;
       if (cb.checked) state.selected[key] = true;
       else delete state.selected[key];
+      setExecNotice(null);
       renderSummary();
     });
 
     $('orderSelectAllBtn').addEventListener('click', function () {
       state.plan.forEach(function (p) { state.selected[String(p.row)] = true; });
+      setExecNotice(null);
       renderPlan();
     });
 
     $('orderClearBtn').addEventListener('click', function () {
       state.selected = {};
+      setExecNotice(null);
       renderPlan();
     });
 
     $('orderReloadBtn').addEventListener('click', function () { loadPlan(false); });
     $('orderLogReloadBtn').addEventListener('click', loadLog);
 
-    // "주문 실행" 은 **확인 모달을 여는 것까지만** 한다. 여기서 주문이 나가지 않는다.
-    $('orderExecBtn').addEventListener('click', openConfirm);
+    // "주문 실행" 은 **계획 재조회 + 확인 모달 열기까지만** 한다. 여기서 주문이 나가지 않는다.
+    $('orderExecBtn').addEventListener('click', requestConfirm);
 
     // 실제 전송은 확인 모달의 확인 버튼에서만.
     $('orderConfirmBtn').addEventListener('click', executeConfirmed);
